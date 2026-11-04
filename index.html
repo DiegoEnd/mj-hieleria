@@ -121,14 +121,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--brand2);box-shadow:0 
   <div class="box">
     <div class="big">🧊</div>
     <h2>MJ Hielería</h2>
-    <p id="loginMsg">Portal interno · Ingresa con tu cuenta</p>
+    <p id="loginMsg">Portal interno · Ingresa con tu usuario</p>
     <form id="loginForm">
-      <label>Correo</label><input name="email" type="email" required autocomplete="username">
+      <label>Usuario</label><input name="usuario" type="text" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ej. admin">
       <label>Contraseña</label><input name="password" type="password" required minlength="6" autocomplete="current-password">
       <div style="height:14px"></div>
       <button class="btn block" id="loginBtn">Ingresar</button>
     </form>
-    <button class="link" id="toggleSignup">¿Primera vez? Crear cuenta</button>
     <div id="loginErr" class="sub" style="color:var(--bad);text-align:center"></div>
   </div>
 </section>
@@ -183,7 +182,11 @@ const diaSemana = iso => new Date(iso+'T12:00:00Z').getUTCDay();
 const lunesDe = iso => { const d = diaSemana(iso); return addDays(iso, d===0 ? -6 : 1-d); };
 const telWa = t => { let d = String(t||'').replace(/\D/g,''); if (d.length===9) d = '51'+d; return d; };
 const cliById = id => S.clientes.find(c => c.id === id);
-const deuda = v => Math.max(num(v.total) - num(v.monto_pagado), 0);
+// Login por usuario: "admin" se guarda en Supabase como admin@mjhieleria.app
+const USER_DOMAIN = 'mjhieleria.app';
+const toEmail = u => { u = String(u||'').trim().toLowerCase(); return u.includes('@') ? u : u + '@' + USER_DOMAIN; };
+const verUsuario = e => String(e||'').replace('@' + USER_DOMAIN, '');
+const deuda = v =>Math.max(num(v.total) - num(v.monto_pagado), 0);
 let charts = [];
 
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2200); }
@@ -779,9 +782,9 @@ function vConfig(el){
       </form>
     </div>
     <div class="card"><h3>Usuarios con acceso</h3>
-      <div class="list">${S.admins.map(a=>`<div class="item" style="cursor:default"><div class="av">👤</div><div class="grow t">${esc(a.email)}</div>${S.admins.length>1?`<button class="btn sm danger" data-ad="${esc(a.email)}">Quitar</button>`:''}</div>`).join('')}</div>
-      <form id="fa" class="row" style="margin-top:8px"><input name="email" type="email" placeholder="correo@ejemplo.com" required><button class="btn">Añadir</button></form>
-      <div class="sub" style="margin-top:6px">La persona añadida debe crear su cuenta con ese mismo correo.</div>
+      <div class="list">${S.admins.map(a=>`<div class="item" style="cursor:default"><div class="av">👤</div><div class="grow t">${esc(verUsuario(a.email))}</div>${S.admins.length>1?`<button class="btn sm danger" data-ad="${esc(a.email)}">Quitar</button>`:''}</div>`).join('')}</div>
+      <form id="fa" class="row" style="margin-top:8px"><input name="usuario" type="text" autocapitalize="none" placeholder="usuario (ej. juan)" required><button class="btn">Añadir</button></form>
+      <div class="sub" style="margin-top:6px">Luego crea ese usuario en Supabase → Authentication → Add user, con el correo <b>usuario@${USER_DOMAIN}</b> y su contraseña.</div>
     </div>
     <div class="card"><h3>Exportar a Excel (CSV)</h3>
       <div class="grid2"><button class="btn ghost" data-x="ventas">Ventas</button><button class="btn ghost" data-x="clientes">Clientes</button><button class="btn ghost" data-x="gastos">Gastos</button><button class="btn ghost" data-x="cuentas">Por pagar</button></div>
@@ -789,8 +792,8 @@ function vConfig(el){
     <button class="btn danger block" id="salir">Cerrar sesión</button>
     <div class="sub" style="text-align:center;margin-top:12px">MJ Hielería · Portal interno</div>`;
   $('#fe').onsubmit = async e => { e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); ['precio_15','precio_3'].forEach(k=>f[k]=num(f[k])); ['stock_minimo_15','stock_minimo_3'].forEach(k=>f[k]=parseInt(f[k])||0); f.updated_at=new Date().toISOString(); const {error}=await sb.from('hielo_empresa').update(f).eq('id',1); chk(error); toast('Guardado'); await loadAll(); render(); };
-  $('#fa').onsubmit = async e => { e.preventDefault(); const email=new FormData(e.target).get('email').trim().toLowerCase(); const {error}=await sb.from('hielo_admins').insert({email}); chk(error); toast('Acceso añadido'); await loadAll(); render(); };
-  $$('[data-ad]').forEach(b=>b.onclick=async()=>{ if(!confirmar('¿Quitar acceso a '+b.dataset.ad+'?')) return; const {error}=await sb.from('hielo_admins').delete().eq('email',b.dataset.ad); chk(error); await loadAll(); render(); });
+  $('#fa').onsubmit = async e => { e.preventDefault(); const email=toEmail(new FormData(e.target).get('usuario')); const {error}=await sb.from('hielo_admins').insert({email}); chk(error); toast('Acceso añadido'); await loadAll(); render(); };
+  $$('[data-ad]').forEach(b=>b.onclick=async()=>{ if(!confirmar('¿Quitar acceso a '+verUsuario(b.dataset.ad)+'?')) return; const {error}=await sb.from('hielo_admins').delete().eq('email',b.dataset.ad); chk(error); await loadAll(); render(); });
   $$('[data-x]').forEach(b=>b.onclick=()=>{ const k=b.dataset.x;
     if(k==='ventas') csv('ventas', S.ventas.map(v=>({fecha:v.fecha, cliente:cliById(v.cliente_id)?.nombre||'', telefono:cliById(v.cliente_id)?.telefono||'', bolsas_1_5kg:v.cant_15, bolsas_3kg:v.cant_3, total:v.total, pagado:v.monto_pagado, metodo:v.metodo_pago, canal:v.canal, entrega:v.entrega, distrito:v.distrito, notas:v.notas})));
     if(k==='clientes') csv('clientes', S.clientes.map(c=>({nombre:c.nombre, telefono:c.telefono, distrito:c.distrito, direccion:c.direccion, tipo:c.tipo, ultima_compra:c.ultima_compra, compras:c.n_compras, total:c.total_comprado, deuda:c.deuda})));
@@ -801,20 +804,12 @@ function vConfig(el){
 }
 
 /* ================= AUTH & BOOT ================= */
-let signup = false;
-$('#toggleSignup').onclick = () => { signup=!signup; $('#loginBtn').textContent = signup?'Crear cuenta':'Ingresar'; $('#toggleSignup').textContent = signup?'Ya tengo cuenta · Ingresar':'¿Primera vez? Crear cuenta'; $('#loginErr').textContent=''; };
 $('#loginForm').onsubmit = async e => {
   e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); $('#loginErr').textContent=''; $('#loginBtn').disabled=true;
   try{
-    if(signup){
-      const {data,error} = await sb.auth.signUp({email:f.email, password:f.password});
-      if(error) throw error;
-      if(!data.session){ $('#loginErr').style.color='var(--ok)'; $('#loginErr').textContent='Cuenta creada. Revisa tu correo para confirmarla y luego ingresa.'; return; }
-    } else {
-      const {error} = await sb.auth.signInWithPassword({email:f.email, password:f.password}); if(error) throw error;
-    }
+    const {error} = await sb.auth.signInWithPassword({email:toEmail(f.usuario), password:f.password}); if(error) throw error;
     await boot();
-  }catch(err){ $('#loginErr').style.color='var(--bad)'; $('#loginErr').textContent = err.message==='Invalid login credentials'?'Correo o contraseña incorrectos':err.message; }
+  }catch(err){ $('#loginErr').style.color='var(--bad)'; $('#loginErr').textContent = err.message==='Invalid login credentials'?'Usuario o contraseña incorrectos':err.message; }
   finally{ $('#loginBtn').disabled=false; }
 };
 async function boot(){
@@ -823,11 +818,11 @@ async function boot(){
   const {data:ok, error} = await sb.rpc('hielo_reclamar_portal');
   if(error || !ok){
     $('#login').classList.remove('hidden'); $('#app').classList.add('hidden');
-    $('#loginErr').style.color='var(--bad)'; $('#loginErr').textContent = `El correo ${session.user.email} no tiene acceso. Pide al dueño que lo añada en Configuración.`;
+    $('#loginErr').style.color='var(--bad)'; $('#loginErr').textContent = `El usuario ${verUsuario(session.user.email)} no tiene acceso. Pide al dueño que lo añada en Configuración.`;
     await sb.auth.signOut(); return;
   }
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
-  $('#hdrSub').textContent = session.user.email;
+  $('#hdrSub').textContent = 'Usuario: ' + verUsuario(session.user.email);
   await loadAll(); go('inicio');
 }
 $$('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
