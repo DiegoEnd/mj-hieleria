@@ -186,6 +186,28 @@ Deno.serve(async (req) => {
       dist: emp.distrito_fiscal || "LIMA", direccion: emp.direccion || "-",
     };
 
+    // Verificar credenciales de producción SIN emitir: lee el certificado y consulta a SUNAT un comprobante inexistente.
+    if (body.accion === "verificar") {
+      const out: Record<string, unknown> = {
+        secretos: Object.fromEntries(["SUNAT_SOL_USUARIO", "SUNAT_SOL_CLAVE", "SUNAT_CERT_PFX_BASE64", "SUNAT_CERT_CLAVE"].map((k) => [k, !!Deno.env.get(k)])),
+      };
+      try {
+        const cred = await credenciales("produccion", ruc);
+        const cert = forge.pki.certificateFromPem(cred.cert);
+        out.certificado = { ok: true, titular: cert.subject.attributes.map((a: any) => a.value).join(" | "), vence: cert.validity.notAfter.toISOString().slice(0, 10) };
+        const soap = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soapenv:Header><wsse:Security><wsse:UsernameToken><wsse:Username>${xe(cred.user)}</wsse:Username><wsse:Password>${xe(cred.pass)}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body><ser:getStatusCdr><rucComprobante>${ruc}</rucComprobante><tipoComprobante>03</tipoComprobante><serieComprobante>B999</serieComprobante><numeroComprobante>99999999</numeroComprobante></ser:getStatusCdr></soapenv:Body></soapenv:Envelope>`;
+        const res = await fetch("https://e-factura.sunat.gob.pe/ol-it-wsconscpegem/billConsultService", { method: "POST", headers: { "Content-Type": "text/xml;charset=UTF-8", SOAPAction: "urn:getStatusCdr" }, body: soap });
+        const txt = await res.text();
+        const code = (txt.match(/<statusCode>([^<]*)</) ?? txt.match(/<faultcode>([^<]*)</) ?? [])[1] ?? String(res.status);
+        const msg = dec((txt.match(/<statusMessage>([^<]*)</) ?? txt.match(/<faultstring>([^<]*)</) ?? [])[1] ?? txt.slice(0, 200));
+        const authFail = /0102|0103|0104|0109|0111|usuario|clave|autoriz/i.test(code + " " + msg) && !/no existe/i.test(msg);
+        out.sol = { ok: !authFail, codigo: code, mensaje: msg };
+      } catch (e) {
+        out.error = (e as Error).message;
+      }
+      return json(out);
+    }
+
     let comp: Record<string, any>;
     let venta: Record<string, any>;
     if (body.accion === "reenviar") {
