@@ -38,8 +38,8 @@ a{color:var(--primary);text-decoration:none}
 .brand{display:flex;align-items:center;gap:10px;padding:20px 22px 16px}
 .brand .logo{width:34px;height:34px;border-radius:8px;background:var(--primary-g);display:grid;place-items:center;color:#fff}
 .brand .logo .ti{font-size:22px}
-.brand .logo img{width:100%;height:100%;object-fit:cover;border-radius:8px}
-.brand .logo:has(img){width:46px;height:36px;background:none}
+.brand .logo img{width:100%;height:100%;object-fit:contain}
+.brand .logo:has(img){width:44px;height:40px;background:none;box-shadow:none}
 .brand b{font-size:20px;color:var(--heading);font-weight:700;letter-spacing:-.01em}
 .menu{overflow-y:auto;padding:4px 14px 20px;flex:1}
 .menu .hdr{font-size:13px;color:var(--muted);margin:18px 10px 6px;font-weight:500}
@@ -309,7 +309,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <p>Ventas, clientes, stock, gastos y pagos de MJ Hielería, desde el celular o la laptop.</p>
   </div>
   <div class="side">
-    <div class="brand" style="padding:0"><div class="logo"><img src="logo.png" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
+    <div class="brand" style="padding:0"><div class="logo"><img src="logo.svg" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
     <h4>Bienvenido</h4>
     <p style="margin:0 0 22px">Ingresa con tu usuario y contraseña.</p>
     <form id="loginForm">
@@ -324,7 +324,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 <!-- ================= APP ================= -->
 <div id="app" class="hidden">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><div class="logo"><img src="logo.png" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
+    <div class="brand"><div class="logo"><img src="logo.svg" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
     <nav class="menu" id="menu"></nav>
   </aside>
   <div class="overlay" id="overlay"></div>
@@ -683,10 +683,10 @@ function imprimirComprobante(c){
   const tmp=document.createElement('div'); tmp.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(tmp);
   let qrImg=''; try{ new QRCode(tmp,{text:qrTxt,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); qrImg=tmp.querySelector('canvas')?.toDataURL('image/png')||''; }catch(e){} tmp.remove();
   const titulo=c.tipo==='01'?'FACTURA ELECTRÓNICA':'BOLETA DE VENTA ELECTRÓNICA';
-  const logoUrl=new URL('logo.png', location.href).href, archivo=`${ruc}-${c.tipo}-${c.serie}-${c.correlativo}`;
+  const logoUrl=new URL('logo.svg', location.href).href, archivo=`${ruc}-${c.tipo}-${c.serie}-${c.correlativo}`;
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${c.serie}-${c.correlativo}</title>
   <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:0;padding:20px;background:#f3f3f3}.doc{max-width:720px;margin:0 auto;background:#fff;padding:28px;border:1px solid #ddd;position:relative}
-  .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.emp{display:flex;gap:14px;align-items:flex-start}.emp .logo{width:120px;height:92px;object-fit:cover;border-radius:8px;flex:none}.emp h1{font-size:20px;margin:0 0 4px}.emp p{margin:2px 0;font-size:13px;color:#444}
+  .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.emp{display:flex;gap:14px;align-items:flex-start}.emp .logo{width:118px;height:102px;object-fit:contain;flex:none}.emp h1{font-size:20px;margin:0 0 4px}.emp p{margin:2px 0;font-size:13px;color:#444}
   .box{border:2px solid #222;border-radius:6px;padding:12px 16px;text-align:center;min-width:220px}.box b{display:block;font-size:15px;margin:4px 0}
   table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13px}th{background:#f1f1f1;text-align:left;padding:8px;border-bottom:1px solid #ccc}td{padding:8px;border-bottom:1px solid #eee}.r{text-align:right}
   .cli{font-size:13px;margin-top:18px;line-height:1.6}.tot{margin-left:auto;width:280px;font-size:14px}.tot div{display:flex;justify-content:space-between;padding:4px 0}.tot .g{font-weight:bold;font-size:16px;border-top:1px solid #222;margin-top:4px;padding-top:6px}
