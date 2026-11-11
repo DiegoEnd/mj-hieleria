@@ -38,6 +38,8 @@ a{color:var(--primary);text-decoration:none}
 .brand{display:flex;align-items:center;gap:10px;padding:20px 22px 16px}
 .brand .logo{width:34px;height:34px;border-radius:8px;background:var(--primary-g);display:grid;place-items:center;color:#fff}
 .brand .logo .ti{font-size:22px}
+.brand .logo img{width:100%;height:100%;object-fit:cover;border-radius:8px}
+.brand .logo:has(img){width:46px;height:36px;background:none}
 .brand b{font-size:20px;color:var(--heading);font-weight:700;letter-spacing:-.01em}
 .menu{overflow-y:auto;padding:4px 14px 20px;flex:1}
 .menu .hdr{font-size:13px;color:var(--muted);margin:18px 10px 6px;font-weight:500}
@@ -307,7 +309,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <p>Ventas, clientes, stock, gastos y pagos de MJ Hielería, desde el celular o la laptop.</p>
   </div>
   <div class="side">
-    <div class="brand" style="padding:0"><div class="logo"><i class="ti ti-snowflake"></i></div><b>MJ Hielería</b></div>
+    <div class="brand" style="padding:0"><div class="logo"><img src="logo.png" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
     <h4>Bienvenido</h4>
     <p style="margin:0 0 22px">Ingresa con tu usuario y contraseña.</p>
     <form id="loginForm">
@@ -322,7 +324,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 <!-- ================= APP ================= -->
 <div id="app" class="hidden">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><div class="logo"><i class="ti ti-snowflake"></i></div><b>MJ Hielería</b></div>
+    <div class="brand"><div class="logo"><img src="logo.png" alt="" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'ti ti-snowflake'}))"></div><b>MJ Hielería</b></div>
     <nav class="menu" id="menu"></nav>
   </aside>
   <div class="overlay" id="overlay"></div>
@@ -681,9 +683,10 @@ function imprimirComprobante(c){
   const tmp=document.createElement('div'); tmp.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(tmp);
   let qrImg=''; try{ new QRCode(tmp,{text:qrTxt,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); qrImg=tmp.querySelector('canvas')?.toDataURL('image/png')||''; }catch(e){} tmp.remove();
   const titulo=c.tipo==='01'?'FACTURA ELECTRÓNICA':'BOLETA DE VENTA ELECTRÓNICA';
+  const logoUrl=new URL('logo.png', location.href).href, archivo=`${ruc}-${c.tipo}-${c.serie}-${c.correlativo}`;
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${c.serie}-${c.correlativo}</title>
   <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:0;padding:20px;background:#f3f3f3}.doc{max-width:720px;margin:0 auto;background:#fff;padding:28px;border:1px solid #ddd;position:relative}
-  .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.emp h1{font-size:20px;margin:0 0 4px}.emp p{margin:2px 0;font-size:13px;color:#444}
+  .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.emp{display:flex;gap:14px;align-items:flex-start}.emp .logo{width:120px;height:92px;object-fit:cover;border-radius:8px;flex:none}.emp h1{font-size:20px;margin:0 0 4px}.emp p{margin:2px 0;font-size:13px;color:#444}
   .box{border:2px solid #222;border-radius:6px;padding:12px 16px;text-align:center;min-width:220px}.box b{display:block;font-size:15px;margin:4px 0}
   table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13px}th{background:#f1f1f1;text-align:left;padding:8px;border-bottom:1px solid #ccc}td{padding:8px;border-bottom:1px solid #eee}.r{text-align:right}
   .cli{font-size:13px;margin-top:18px;line-height:1.6}.tot{margin-left:auto;width:280px;font-size:14px}.tot div{display:flex;justify-content:space-between;padding:4px 0}.tot .g{font-weight:bold;font-size:16px;border-top:1px solid #222;margin-top:4px;padding-top:6px}
@@ -691,9 +694,9 @@ function imprimirComprobante(c){
   .beta{position:absolute;top:40%;left:0;right:0;text-align:center;font-size:54px;color:rgba(220,0,0,.15);transform:rotate(-20deg);font-weight:bold;pointer-events:none}
   .btns{max-width:720px;margin:0 auto 12px;display:flex;gap:8px}.btns button{padding:10px 16px;border:0;border-radius:6px;background:#7367F0;color:#fff;font-size:14px;cursor:pointer}
   @media print{body{background:#fff;padding:0}.doc{border:0}.btns{display:none}}</style></head><body>
-  <div class="btns"><button onclick="window.print()">Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#808390">Cerrar</button></div>
-  <div class="doc">${c.modo==='beta'?'<div class="beta">PRUEBA · SIN VALOR</div>':''}
-  <div class="top"><div class="emp"><h1>${esc(E.nombre_comercial||E.nombre)}</h1><p><b>${esc(E.razon_social||E.nombre)}</b></p><p>${esc(E.direccion||'')}</p><p>${esc([E.distrito_fiscal,E.provincia,E.departamento].filter(Boolean).join(' - '))}</p>${E.telefono?`<p>Tel: ${esc(E.telefono)}</p>`:''}</div>
+  <div class="btns"><button id="pdf">Descargar PDF</button><button onclick="window.print()" style="background:#28C76F">Imprimir</button><button onclick="window.close()" style="background:#808390">Cerrar</button></div>
+  <div class="doc" id="doc">${c.modo==='beta'?'<div class="beta">PRUEBA · SIN VALOR</div>':''}
+  <div class="top"><div class="emp"><img class="logo" src="${logoUrl}" crossorigin="anonymous" alt="Logo" onerror="this.remove()"><div><h1>${esc(E.nombre_comercial||E.nombre)}</h1><p><b>${esc(E.razon_social||E.nombre)}</b></p><p>${esc(E.direccion||'')}</p><p>${esc([E.distrito_fiscal,E.provincia,E.departamento].filter(Boolean).join(' - '))}</p>${E.telefono?`<p>Tel: ${esc(E.telefono)}</p>`:''}</div></div>
   <div class="box">R.U.C. ${esc(ruc)}<b>${titulo}</b>${c.serie}-${String(c.correlativo).padStart(8,'0')}</div></div>
   <div class="cli"><b>Fecha de emisión:</b> ${fmtF(c.fecha_emision)}<br><b>Cliente:</b> ${esc(c.cliente_nombre||'')}<br><b>${tdoc}:</b> ${esc(c.cliente_num_doc||'')}${c.cliente_direccion?`<br><b>Dirección:</b> ${esc(c.cliente_direccion)}`:''}<br><b>Moneda:</b> Soles · <b>Forma de pago:</b> Contado</div>
   <table><thead><tr><th>Cant.</th><th>Unid.</th><th>Descripción</th><th class="r">V. unit.</th><th class="r">P. unit.</th><th class="r">Importe</th></tr></thead><tbody>
@@ -702,7 +705,10 @@ function imprimirComprobante(c){
   <div class="tot"><div><span>Op. gravada</span><span>S/ ${num(c.gravada).toFixed(2)}</span></div><div><span>IGV 18%</span><span>S/ ${num(c.igv).toFixed(2)}</span></div><div class="g"><span>Importe total</span><span>S/ ${num(c.total).toFixed(2)}</span></div></div>
   <div class="son">${montoLetras(c.total)}</div>
   <div class="foot">${qrImg?`<img src="${qrImg}" width="110" height="110" alt="Código QR">`:''}<div>Representación impresa de la ${c.tipo==='01'?'Factura':'Boleta de Venta'} Electrónica.<br>Consulte su validez en www.sunat.gob.pe<br>Resumen (hash): ${esc(c.hash||'')}<br>Estado SUNAT: ${esc(c.estado)}${c.sunat_mensaje?' – '+esc(c.sunat_mensaje.split('|')[0]):''}</div></div>
-  </div></body></html>`;
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
+  <script>document.getElementById('pdf').onclick=function(){var b=this;b.textContent='Generando…';html2pdf().set({margin:8,filename:'${archivo}.pdf',image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4'}}).from(document.getElementById('doc')).save().then(function(){b.textContent='Descargar PDF'});};<\/script>
+  </body></html>`;
   const w=window.open('','_blank'); if(!w) return toast('Permite las ventanas emergentes para imprimir','err');
   w.document.open(); w.document.write(html); w.document.close();
 }
