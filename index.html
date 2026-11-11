@@ -698,7 +698,7 @@ function imprimirComprobante(c){
   <div class="doc" id="doc">${c.modo==='beta'?'<div class="beta">PRUEBA · SIN VALOR</div>':''}
   <div class="top"><div class="emp"><img class="logo" src="${logoUrl}" crossorigin="anonymous" alt="Logo" onerror="this.remove()"><div><h1>${esc(E.nombre_comercial||E.nombre)}</h1><p><b>${esc(E.razon_social||E.nombre)}</b></p><p>${esc(E.direccion||'')}</p><p>${esc([E.distrito_fiscal,E.provincia,E.departamento].filter(Boolean).join(' - '))}</p>${E.telefono?`<p>Tel: ${esc(E.telefono)}</p>`:''}</div></div>
   <div class="box">R.U.C. ${esc(ruc)}<b>${titulo}</b>${c.serie}-${String(c.correlativo).padStart(8,'0')}</div></div>
-  <div class="cli"><b>Fecha de emisión:</b> ${fmtF(c.fecha_emision)}<br><b>Cliente:</b> ${esc(c.cliente_nombre||'')}<br><b>${tdoc}:</b> ${esc(c.cliente_num_doc||'')}${c.cliente_direccion?`<br><b>Dirección:</b> ${esc(c.cliente_direccion)}`:''}<br><b>Moneda:</b> Soles · <b>Forma de pago:</b> Contado</div>
+  <div class="cli"><b>Fecha de emisión:</b> ${fmtF(c.fecha_emision)}<br><b>Cliente:</b> ${esc(c.cliente_nombre||'')}${c.cliente_tipo_doc&&c.cliente_tipo_doc!=='0'?`<br><b>${tdoc}:</b> ${esc(c.cliente_num_doc||'')}`:''}${c.cliente_direccion?`<br><b>Dirección:</b> ${esc(c.cliente_direccion)}`:''}<br><b>Moneda:</b> Soles · <b>Forma de pago:</b> Contado</div>
   <table><thead><tr><th>Cant.</th><th>Unid.</th><th>Descripción</th><th class="r">V. unit.</th><th class="r">P. unit.</th><th class="r">Importe</th></tr></thead><tbody>
   ${lineas.map(([d,q,p])=>`<tr><td>${q}</td><td>NIU</td><td>${d}</td><td class="r">${num(p).toFixed(2)}</td><td class="r">${(num(p)*1.18).toFixed(2)}</td><td class="r">${(r2(q*p)+r2(q*p*0.18)).toFixed(2)}</td></tr>`).join('')}
   </tbody></table>
