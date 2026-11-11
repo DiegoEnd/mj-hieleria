@@ -46,6 +46,7 @@ const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const f2 = (n: number) => r2(n).toFixed(2);
 const xe = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const dec = (s: string) => s.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const limaNow = () => {
   const d = new Date(Date.now() - 5 * 3600 * 1000).toISOString();
@@ -120,7 +121,7 @@ function firmar(xml: string, key: string, cert: string) {
   });
   sig.addReference({
     xpath: "/*",
-    transforms: ["http://www.w3.org/2000/09/xmldsig#enveloped-signature"],
+    transforms: ["http://www.w3.org/2000/09/xmldsig#enveloped-signature", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"],
     digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1",
     isEmptyUri: true,
   });
@@ -155,12 +156,12 @@ async function enviar(modo: string, cred: { user: string; pass: string }, nombre
     const notas = [...cdrXml.matchAll(/<cbc:Note>([^<]*)</g)].map((m) => m[1]);
     const n = Number(codigo);
     const estado = n === 0 ? (notas.length ? "OBSERVADO" : "ACEPTADO") : n >= 4000 ? "OBSERVADO" : "RECHAZADO";
-    return { estado, codigo, mensaje: [desc, ...notas].filter(Boolean).join(" | "), cdr: app[1] };
+    return { estado, codigo, mensaje: dec([desc, ...notas].filter(Boolean).join(" | ")), cdr: app[1] };
   }
   const fcode = (txt.match(/<faultcode>([^<]*)<\/faultcode>/) ?? [])[1] ?? String(res.status);
   const fstr = (txt.match(/<faultstring>([^<]*)<\/faultstring>/) ?? [])[1] ?? txt.slice(0, 300);
   const num = Number((fcode.match(/(\d{3,4})/) ?? [])[1] ?? 0);
-  return { estado: num >= 2000 && num < 4000 ? "RECHAZADO" : "ERROR", codigo: String(num || fcode), mensaje: fstr, cdr: null };
+  return { estado: num >= 2000 && num < 4000 ? "RECHAZADO" : "ERROR", codigo: String(num || fcode), mensaje: dec(fstr), cdr: null };
 }
 
 // ---------- Handler ----------
