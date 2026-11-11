@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{
   --primary:#7367F0; --primary-d:#675DD8; --primary-l:#E9E7FD; --primary-g:linear-gradient(72.47deg,#7367F0 22.16%,rgba(115,103,240,.7) 76.47%);
@@ -353,7 +354,7 @@ const TIPOS_CLI = ['Bodega','Restaurante','Juguería','Pollería','Cevichería',
 const TONES = ['primary','success','info','warning','danger','secondary'];
 
 /* ================= STATE & UTILS ================= */
-const S = { empresa:null, clientes:[], ventas:[], gastos:[], cuentas:[], prestamos:[], movs:[], admins:[], view:'dashboard', periodo:'mes', cliFiltro:'todos', ventaFiltro:'todas', mes:null, user:'', q:'' };
+const S = { empresa:null, clientes:[], ventas:[], comprobantes:[], gastos:[], cuentas:[], prestamos:[], movs:[], admins:[], view:'dashboard', periodo:'mes', cliFiltro:'todos', ventaFiltro:'todas', mes:null, user:'', q:'' };
 const $ = (s, el=document) => el.querySelector(s);
 const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -399,7 +400,7 @@ async function fetchAll(build){
   return out;
 }
 async function loadAll(){
-  const [emp, cli, ven, gas, cue, pre, mov, adm] = await Promise.all([
+  const [emp, cli, ven, gas, cue, pre, mov, adm, cps] = await Promise.all([
     sb.from('hielo_empresa').select('*').eq('id',1).single(),
     fetchAll(()=>sb.from('hielo_clientes_resumen').select('*').order('nombre')),
     fetchAll(()=>sb.from('hielo_ventas').select('*').order('fecha',{ascending:false}).order('id',{ascending:false})),
@@ -407,10 +408,11 @@ async function loadAll(){
     fetchAll(()=>sb.from('hielo_cuentas_pagar').select('*').order('vencimiento')),
     fetchAll(()=>sb.from('hielo_prestamos').select('*').order('fecha',{ascending:false})),
     fetchAll(()=>sb.from('hielo_movimientos_stock').select('*').order('fecha',{ascending:false}).order('id',{ascending:false})),
-    sb.from('hielo_admins').select('*').order('created_at')
+    sb.from('hielo_admins').select('*').order('created_at'),
+    fetchAll(()=>sb.from('hielo_comprobantes').select('id,venta_id,modo,tipo,serie,correlativo,fecha_emision,cliente_tipo_doc,cliente_num_doc,cliente_nombre,cliente_direccion,gravada,igv,total,estado,sunat_codigo,sunat_mensaje,hash,created_at').order('id',{ascending:false}))
   ]);
   chk(emp.error); chk(adm.error);
-  Object.assign(S, {empresa:emp.data, clientes:cli, ventas:ven, gastos:gas, cuentas:cue, prestamos:pre, movs:mov, admins:adm.data});
+  Object.assign(S, {empresa:emp.data, clientes:cli, ventas:ven, gastos:gas, cuentas:cue, prestamos:pre, movs:mov, admins:adm.data, comprobantes:cps});
 }
 async function refresh(){ await loadAll(); render(); }
 
@@ -462,6 +464,7 @@ const MENU = [
   ['dashboard','smart-home','Dashboard'],
   ['Operación'],
   ['ventas','shopping-cart','Ventas'],
+  ['comprobantes','file-invoice','Comprobantes SUNAT'],
   ['clientes','users','Clientes','recordar'],
   ['stock','box','Stock y producción'],
   ['Finanzas'],
@@ -483,7 +486,7 @@ function go(v){ S.view=v; history.replaceState(null,'','#'+v); document.body.cla
 function render(){
   charts.forEach(c=>c.destroy()); charts=[];
   renderMenu();
-  const V = {dashboard:vDashboard, ventas:vVentas, clientes:vClientes, stock:vStock, gastos:vGastos, pagar:vPagar, prestamos:vPrestamos, reportes:vReportes, config:vConfig}[S.view] || vDashboard;
+  const V = {dashboard:vDashboard, ventas:vVentas, comprobantes:vComprobantes, clientes:vClientes, stock:vStock, gastos:vGastos, pagar:vPagar, prestamos:vPrestamos, reportes:vReportes, config:vConfig}[S.view] || vDashboard;
   V($('#view'));
 }
 
@@ -499,13 +502,14 @@ function ventaFields(v={}, cliPre=null){
       <div class="prodbox fg"><div class="ph"><div class="av sm t-info">${ic('snowflake')}</div><b>Bolsa 1.5 kg</b></div>
         <div class="qty"><button type="button" data-q="c15" data-d="-1" aria-label="Menos">−</button><input name="c15" type="number" min="0" inputmode="numeric" value="${v.cant_15||0}"><button type="button" data-q="c15" data-d="1" aria-label="Más">+</button></div>
         <div class="quick">${[5,10,20,50].map(n=>`<button type="button" data-qa="c15" data-n="${n}">+${n}</button>`).join('')}</div>
-        <div style="margin-top:10px">${money_in('p15', p15)}</div><div class="help">Precio por bolsa</div></div>
+        <div style="margin-top:10px">${money_in('p15', p15)}</div><div class="help">Precio por bolsa, sin IGV</div></div>
       <div class="prodbox fg"><div class="ph"><div class="av sm t-primary">${ic('snowflake')}</div><b>Bolsa 3 kg</b></div>
         <div class="qty"><button type="button" data-q="c3" data-d="-1" aria-label="Menos">−</button><input name="c3" type="number" min="0" inputmode="numeric" value="${v.cant_3||0}"><button type="button" data-q="c3" data-d="1" aria-label="Más">+</button></div>
         <div class="quick">${[5,10,20,50].map(n=>`<button type="button" data-qa="c3" data-n="${n}">+${n}</button>`).join('')}</div>
-        <div style="margin-top:10px">${money_in('p3', p3)}</div><div class="help">Precio por bolsa</div></div>
+        <div style="margin-top:10px">${money_in('p3', p3)}</div><div class="help">Precio por bolsa, sin IGV</div></div>
     </div>
-    <div class="totalbox"><span>Total a cobrar</span><b data-total>S/ 0.00</b></div>
+    <label class="sw fg"><input type="checkbox" name="con_igv" ${v.id&&v.con_igv===false?'':'checked'}> Sumar IGV 18% (necesario para emitir boleta o factura)</label>
+    <div class="totalbox" style="flex-wrap:wrap"><div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px"><span>Subtotal <b data-sub style="font-size:15px">S/ 0.00</b></span><span>IGV <b data-igv style="font-size:15px">S/ 0.00</b></span></div><div><span>Total a cobrar </span><b data-total>S/ 0.00</b></div></div>
     <div class="fg"><span class="flabel">Estado del pago</span>${radios('estado',[['Pagado','circle-check'],['Pendiente','clock'],['Parcial','adjustments']],estado)}</div>
     <div class="fg ${estado==='Parcial'?'':'hidden'}" data-parcial><label>Monto pagado</label>${money_in('pagado', v.id?v.monto_pagado:'')}</div>
     <div class="frow">
@@ -520,9 +524,10 @@ function ventaFields(v={}, cliPre=null){
 function bindVenta(root){
   const f = root.querySelector('form') || root;
   const upd = () => {
-    const t = num(f.c15.value)*num(f.p15.value) + num(f.c3.value)*num(f.p3.value);
-    $('[data-total]',root).textContent = money(t);
+    const t = calcVenta(f.c15.value, f.p15.value, f.c3.value, f.p3.value, f.con_igv.checked);
+    $('[data-sub]',root).textContent = money(t.sub); $('[data-igv]',root).textContent = money(t.igv); $('[data-total]',root).textContent = money(t.total);
   };
+  f.con_igv.addEventListener('change',upd);
   $$('[data-q]',root).forEach(b=>b.onclick=()=>{ const i=f[b.dataset.q]; i.value=Math.max(0,(parseInt(i.value)||0)+ +b.dataset.d); upd(); });
   $$('[data-qa]',root).forEach(b=>b.onclick=()=>{ const i=f[b.dataset.qa]; i.value=(parseInt(i.value)||0)+ +b.dataset.n; upd(); });
   ['c15','c3','p15','p3'].forEach(k=>f[k].addEventListener('input',upd));
@@ -550,10 +555,12 @@ async function resolverCliente(txt){
 async function guardarVenta(fd, v={}){
   const c15=Math.max(0,parseInt(fd.get('c15'))||0), c3=Math.max(0,parseInt(fd.get('c3'))||0), p15=num(fd.get('p15')), p3=num(fd.get('p3'));
   if(!c15 && !c3){ toast('Agrega al menos una bolsa','err'); throw new Error('sin bolsas'); }
-  const total=c15*p15+c3*p3, est=fd.get('estado');
+  const conIgv = fd.get('con_igv')==='on';
+  if(v.id && compDeVenta(v.id) && !confirmar('Esta venta ya tiene comprobante SUNAT. Si cambias cantidades o precios, el comprobante ya no coincidirá. ¿Guardar de todas formas?')) throw new Error('cancelado');
+  const total=calcVenta(c15,p15,c3,p3,conIgv).total, est=fd.get('estado');
   const pagado = est==='Pagado'?total : est==='Pendiente'?0 : Math.min(num(fd.get('pagado')),total);
   const cli = await resolverCliente(fd.get('cliente'));
-  const row = {fecha:fd.get('fecha')||hoy(), cliente_id:cli?.id||null, cant_15:c15, cant_3:c3, precio_15:p15, precio_3:p3, monto_pagado:pagado, metodo_pago:fd.get('metodo'), canal:fd.get('canal'), entrega:fd.get('entrega'), distrito:fd.get('distrito')||cli?.distrito||null, notas:fd.get('notas')||null};
+  const row = {fecha:fd.get('fecha')||hoy(), cliente_id:cli?.id||null, cant_15:c15, cant_3:c3, precio_15:p15, precio_3:p3, con_igv:conIgv, monto_pagado:pagado, metodo_pago:fd.get('metodo'), canal:fd.get('canal'), entrega:fd.get('entrega'), distrito:fd.get('distrito')||cli?.distrito||null, notas:fd.get('notas')||null};
   const q = v.id ? sb.from('hielo_ventas').update(row).eq('id',v.id) : sb.from('hielo_ventas').insert(row);
   const {error}=await q; chk(error);
   toast(v.id?'Venta actualizada':'Venta registrada');
@@ -568,15 +575,20 @@ function detalleVenta(id){
   modal({title:'Venta del '+fmtF(v.fecha), sub:esc(c?.nombre||'Cliente varios'), noForm:true, body:`
     ${v.cant_15?`<div class="kv"><span>Bolsas 1.5 kg</span><span>${v.cant_15} × ${money(v.precio_15)}</span></div>`:''}
     ${v.cant_3?`<div class="kv"><span>Bolsas 3 kg</span><span>${v.cant_3} × ${money(v.precio_3)}</span></div>`:''}
+    <div class="kv"><span>Subtotal</span><span>${money(v.subtotal)}</span></div>
+    <div class="kv"><span>IGV 18%</span><span>${v.con_igv===false?'No aplica':money(v.igv)}</span></div>
     <div class="kv"><span>Total</span><b style="font-size:18px">${money(v.total)}</b></div>
     <div class="kv"><span>Pagado</span><span>${money(v.monto_pagado)} (${esc(v.metodo_pago||'')})</span></div>
     <div class="kv"><span>Estado</span><span>${badgePago(v)}</span></div>
+    <div class="kv"><span>Comprobante SUNAT</span><span>${compBadge(v)}</span></div>
     <div class="kv"><span>Pedido / entrega</span><span>${esc(v.canal||'')} · ${esc(v.entrega||'')}</span></div>
     <div class="kv"><span>Distrito</span><span>${esc(v.distrito||'—')}</span></div>
     ${v.notas?`<div class="kv"><span>Nota</span><span>${esc(v.notas)}</span></div>`:''}`,
-    extraBtns:`${d>0?`<button class="btn success" data-a="cobrar">${ic('cash')}Cobrar ${money(d)}</button>`:''}<button class="btn lbl" data-a="edit">${ic('pencil')}Editar</button><button class="btn danger-l" data-a="del">${ic('trash')}Borrar</button>`,
+    extraBtns:`${!compDeVenta(v.id)&&v.con_igv!==false?`<button class="btn" data-a="emitir">${ic('file-invoice')}Emitir comprobante</button>`:''}${compDeVenta(v.id)?`<button class="btn lbl" data-a="print">${ic('printer')}Ver comprobante</button>`:''}${d>0?`<button class="btn success" data-a="cobrar">${ic('cash')}Cobrar ${money(d)}</button>`:''}<button class="btn lbl" data-a="edit">${ic('pencil')}Editar</button><button class="btn danger-l" data-a="del">${ic('trash')}Borrar</button>`,
     onMount:(m,close)=>{
       const b=a=>$(`[data-a=${a}]`,m);
+      if(b('emitir')) b('emitir').onclick=()=>{ close(); formEmitir(v); };
+      if(b('print')) b('print').onclick=()=>imprimirComprobante(compDeVenta(v.id));
       b('edit').onclick=()=>{ close(); formVenta(v); };
       b('del').onclick=async()=>{ await borrarVenta(v.id); close(); };
       if(b('cobrar')) b('cobrar').onclick=async()=>{ await cobrarVenta(v); close(); };
@@ -584,6 +596,140 @@ function detalleVenta(id){
 }
 async function cobrarVenta(v){ const {error}=await sb.from('hielo_ventas').update({monto_pagado:v.total}).eq('id',v.id); chk(error); toast('Cobro registrado: '+money(deuda(v))); await refresh(); }
 async function borrarVenta(id){ if(!confirmar('¿Borrar esta venta? Las bolsas vuelven al stock.')) return; const {error}=await sb.from('hielo_ventas').delete().eq('id',id); chk(error); toast('Venta borrada','inf'); await refresh(); }
+
+/* ================= SUNAT / COMPROBANTES ================= */
+const r2 = n => Math.round((num(n) + Number.EPSILON) * 100) / 100;
+function calcVenta(c15, p15, c3, p3, conIgv=true){
+  const b15=r2(num(c15)*num(p15)), b3=r2(num(c3)*num(p3)), sub=r2(b15+b3);
+  const igv = conIgv ? r2(r2(b15*0.18)+r2(b3*0.18)) : 0;
+  return {sub, igv, total:r2(sub+igv)};
+}
+const modoSunat = () => S.empresa?.sunat_modo==='produccion' ? 'produccion' : 'beta';
+const nombreComp = c => `${c.tipo==='01'?'Factura':'Boleta'} ${c.serie}-${c.correlativo}`;
+function compDeVenta(vid){ return S.comprobantes.find(c=>c.venta_id===vid && c.modo===modoSunat() && ['ACEPTADO','OBSERVADO','PENDIENTE'].includes(c.estado)); }
+function badgeEstadoComp(c){
+  const m={ACEPTADO:['success','circle-check','Aceptado'],OBSERVADO:['success','circle-check','Aceptado con obs.'],PENDIENTE:['warning','clock','Pendiente'],RECHAZADO:['danger','circle-x','Rechazado'],ERROR:['danger','alert-triangle','No enviado']}[c.estado]||['secondary','help','—'];
+  return `<span class="badge t-${m[0]}" title="${esc(c.sunat_mensaje||'')}">${ic(m[1])}${m[2]}</span>`;
+}
+function compBadge(v){
+  const c=compDeVenta(v.id); if(!c) return '<span class="c-muted">Sin comprobante</span>';
+  return `<button class="badge t-success" style="border:0;cursor:pointer" data-pc="${c.id}" title="Ver / imprimir">${ic('file-check')}${c.serie}-${c.correlativo}${c.modo==='beta'?' (prueba)':''}</button>`;
+}
+const UNI=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISEIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE','VEINTIUNO','VEINTIDOS','VEINTITRES','VEINTICUATRO','VEINTICINCO','VEINTISEIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+const DEC=['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+const CEN=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+function cientos(n){ if(!n) return ''; if(n===100) return 'CIEN'; const c=Math.floor(n/100), r=n%100; let s=CEN[c]; if(r) s+=(s?' ':'')+(r<30?UNI[r]:DEC[Math.floor(r/10)]+(r%10?' Y '+UNI[r%10]:'')); return s; }
+function letras(n){ if(!n) return 'CERO'; const mi=Math.floor(n/1e6), m=Math.floor((n%1e6)/1000), r=n%1000; let s=''; if(mi) s+=mi===1?'UN MILLON':cientos(mi)+' MILLONES'; if(m) s+=(s?' ':'')+(m===1?'MIL':cientos(m)+' MIL'); if(r) s+=(s?' ':'')+cientos(r); return s.replace(/UNO MIL/g,'UN MIL'); }
+const montoLetras = t => { const e=Math.floor(r2(t)), c=Math.round((r2(t)-e)*100); return `SON ${letras(e)} CON ${String(c).padStart(2,'0')}/100 SOLES`; };
+
+function formEmitir(v){
+  if(v.con_igv===false){ toast('Esta venta está sin IGV. Edítala y marca "Sumar IGV" para emitir.','err'); return; }
+  const c=cliById(v.cliente_id), beta=modoSunat()==='beta';
+  const tipoIni = c?.tipo_doc==='RUC' ? '01' : '03';
+  modal({title:'Emitir comprobante electrónico', sub:`Venta del ${fmtF(v.fecha)} · Total ${money(v.total)}`, submit:'Emitir a SUNAT', submitIcon:'send', body:`
+    ${beta?`<div class="alert warning">${ic('flask')}<div><b>Modo prueba.</b> Se envía al ambiente de pruebas de SUNAT: sirve para probar, no tiene validez tributaria.</div></div>`:''}
+    <div class="fg"><span class="flabel">Tipo de comprobante</span><div class="opts" style="--n:2">
+      <label><input type="radio" name="tipo" value="03" ${tipoIni==='03'?'checked':''}><span>${ic('receipt')}Boleta</span></label>
+      <label><input type="radio" name="tipo" value="01" ${tipoIni==='01'?'checked':''}><span>${ic('file-invoice')}Factura</span></label></div></div>
+    <div class="frow">
+      ${fg('Documento del cliente', sel('tipo_doc',[['DNI','DNI'],['RUC','RUC'],['CE','Carné de extranjería'],['NINGUNO','Sin documento']], c?.tipo_doc && c.tipo_doc!=='NINGUNO' ? c.tipo_doc : (tipoIni==='01'?'RUC':'NINGUNO')))}
+      ${fg('Número', inp('num_doc', c?.num_doc||'', 'inputmode="numeric" placeholder="DNI 8 dígitos / RUC 11 dígitos"'))}
+    </div>
+    ${fg('Nombre o razón social', inp('nombre', c?.nombre||'', 'placeholder="Ej. INVERSIONES ROSA SAC"'), 'En factura debe ser la razón social exacta del RUC.')}
+    ${fg('Dirección (opcional)', inp('direccion', c?.direccion||'', 'placeholder="Dirección fiscal del cliente"'))}
+    ${c?`<label class="sw fg"><input type="checkbox" name="guardar" checked> Guardar estos datos en el cliente ${esc(c.nombre)}</label>`:''}
+    <div class="kv"><span>Op. gravada</span><span>${money(v.subtotal)}</span></div>
+    <div class="kv"><span>IGV 18%</span><span>${money(v.igv)}</span></div>
+    <div class="kv"><span>Total</span><b>${money(v.total)}</b></div>
+    <div class="help" data-hint></div>`,
+    onMount:m=>{
+      const f=$('form',m), hint=$('[data-hint]',m);
+      const sync=()=>{ const fac=f.tipo.value==='01'; if(fac){ f.tipo_doc.value='RUC'; } hint.textContent = fac ? 'Factura: requiere RUC de 11 dígitos y razón social.' : (num(v.total)>700?'Boleta mayor a S/ 700: requiere DNI del cliente.':'Boleta: el documento es opcional hasta S/ 700.'); };
+      $$('input[name=tipo]',m).forEach(r=>r.onchange=sync); sync();
+    },
+    onSubmit: async (fd, close)=>{
+      const tipo=fd.get('tipo'), tipo_doc=fd.get('tipo_doc'), num_doc=(fd.get('num_doc')||'').replace(/\D/g,''), nombre=(fd.get('nombre')||'').trim(), direccion=(fd.get('direccion')||'').trim();
+      if(tipo==='01' && (!/^\d{11}$/.test(num_doc) || !nombre)){ toast('Para factura escribe el RUC (11 dígitos) y la razón social','err'); return; }
+      if(c && fd.get('guardar')==='on' && num_doc){ await sb.from('hielo_clientes').update({tipo_doc, num_doc, direccion: c.direccion||direccion||null}).eq('id',c.id); }
+      const {data, error} = await sb.functions.invoke('sunat', {body:{accion:'emitir', venta_id:v.id, tipo, cliente:{tipo_doc, num_doc, nombre, direccion}}});
+      let msg = data?.error;
+      if(error){ try{ msg = (await error.context.json()).error; }catch{ msg = error.message; } }
+      if(msg){ toast(msg,'err'); return; }
+      const cp=data.comprobante;
+      if(data.ok){ toast(`${nombreComp(cp)} aceptada por SUNAT${cp.modo==='beta'?' (prueba)':''}`); close(); await refresh(); const full=S.comprobantes.find(x=>x.id===cp.id); if(full && confirmar('¿Quieres ver e imprimir el comprobante?')) imprimirComprobante(full); }
+      else { toast(`SUNAT: ${cp.sunat_mensaje||cp.estado}`,'err'); close(); await refresh(); }
+    }});
+}
+async function reenviarComp(id){
+  toast('Reenviando a SUNAT…','inf');
+  const {data,error}=await sb.functions.invoke('sunat',{body:{accion:'reenviar', comprobante_id:id}});
+  let msg=data?.error; if(error){ try{ msg=(await error.context.json()).error; }catch{ msg=error.message; } }
+  if(msg) toast(msg,'err'); else toast(data.ok?'Aceptado por SUNAT':'SUNAT: '+(data.comprobante.sunat_mensaje||data.comprobante.estado), data.ok?'ok':'err');
+  await refresh();
+}
+async function descargarXML(c){
+  const {data,error}=await sb.from('hielo_comprobantes').select('xml').eq('id',c.id).single(); chk(error);
+  if(!data.xml) return toast('Este comprobante no tiene XML','err');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data.xml],{type:'application/xml'})); a.download=`${S.empresa.ruc||'RUC'}-${c.tipo}-${c.serie}-${c.correlativo}.xml`; a.click();
+}
+function imprimirComprobante(c){
+  if(!c) return;
+  const E=S.empresa, v=S.ventas.find(x=>x.id===c.venta_id), ruc=E.ruc||'20000000001';
+  const lineas=[]; if(v?.cant_15) lineas.push(['BOLSA DE HIELO 1.5 KG',v.cant_15,v.precio_15]); if(v?.cant_3) lineas.push(['BOLSA DE HIELO 3 KG',v.cant_3,v.precio_3]);
+  const tdoc={'6':'RUC','1':'DNI','4':'C.E.','0':'—'}[c.cliente_tipo_doc]||'';
+  const qrTxt=`${ruc}|${c.tipo}|${c.serie}|${c.correlativo}|${num(c.igv).toFixed(2)}|${num(c.total).toFixed(2)}|${c.fecha_emision}|${c.cliente_tipo_doc}|${c.cliente_num_doc}|${c.hash||''}|`;
+  const tmp=document.createElement('div'); tmp.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(tmp);
+  let qrImg=''; try{ new QRCode(tmp,{text:qrTxt,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); qrImg=tmp.querySelector('canvas')?.toDataURL('image/png')||''; }catch(e){} tmp.remove();
+  const titulo=c.tipo==='01'?'FACTURA ELECTRÓNICA':'BOLETA DE VENTA ELECTRÓNICA';
+  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${c.serie}-${c.correlativo}</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:0;padding:20px;background:#f3f3f3}.doc{max-width:720px;margin:0 auto;background:#fff;padding:28px;border:1px solid #ddd;position:relative}
+  .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.emp h1{font-size:20px;margin:0 0 4px}.emp p{margin:2px 0;font-size:13px;color:#444}
+  .box{border:2px solid #222;border-radius:6px;padding:12px 16px;text-align:center;min-width:220px}.box b{display:block;font-size:15px;margin:4px 0}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13px}th{background:#f1f1f1;text-align:left;padding:8px;border-bottom:1px solid #ccc}td{padding:8px;border-bottom:1px solid #eee}.r{text-align:right}
+  .cli{font-size:13px;margin-top:18px;line-height:1.6}.tot{margin-left:auto;width:280px;font-size:14px}.tot div{display:flex;justify-content:space-between;padding:4px 0}.tot .g{font-weight:bold;font-size:16px;border-top:1px solid #222;margin-top:4px;padding-top:6px}
+  .foot{display:flex;gap:16px;align-items:center;margin-top:20px;font-size:12px;color:#444}.son{font-size:13px;margin-top:10px}
+  .beta{position:absolute;top:40%;left:0;right:0;text-align:center;font-size:54px;color:rgba(220,0,0,.15);transform:rotate(-20deg);font-weight:bold;pointer-events:none}
+  .btns{max-width:720px;margin:0 auto 12px;display:flex;gap:8px}.btns button{padding:10px 16px;border:0;border-radius:6px;background:#7367F0;color:#fff;font-size:14px;cursor:pointer}
+  @media print{body{background:#fff;padding:0}.doc{border:0}.btns{display:none}}</style></head><body>
+  <div class="btns"><button onclick="window.print()">Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#808390">Cerrar</button></div>
+  <div class="doc">${c.modo==='beta'?'<div class="beta">PRUEBA · SIN VALOR</div>':''}
+  <div class="top"><div class="emp"><h1>${esc(E.nombre_comercial||E.nombre)}</h1><p><b>${esc(E.razon_social||E.nombre)}</b></p><p>${esc(E.direccion||'')}</p><p>${esc([E.distrito_fiscal,E.provincia,E.departamento].filter(Boolean).join(' - '))}</p>${E.telefono?`<p>Tel: ${esc(E.telefono)}</p>`:''}</div>
+  <div class="box">R.U.C. ${esc(ruc)}<b>${titulo}</b>${c.serie}-${String(c.correlativo).padStart(8,'0')}</div></div>
+  <div class="cli"><b>Fecha de emisión:</b> ${fmtF(c.fecha_emision)}<br><b>Cliente:</b> ${esc(c.cliente_nombre||'')}<br><b>${tdoc}:</b> ${esc(c.cliente_num_doc||'')}${c.cliente_direccion?`<br><b>Dirección:</b> ${esc(c.cliente_direccion)}`:''}<br><b>Moneda:</b> Soles · <b>Forma de pago:</b> Contado</div>
+  <table><thead><tr><th>Cant.</th><th>Unid.</th><th>Descripción</th><th class="r">V. unit.</th><th class="r">P. unit.</th><th class="r">Importe</th></tr></thead><tbody>
+  ${lineas.map(([d,q,p])=>`<tr><td>${q}</td><td>NIU</td><td>${d}</td><td class="r">${num(p).toFixed(2)}</td><td class="r">${(num(p)*1.18).toFixed(2)}</td><td class="r">${(r2(q*p)+r2(q*p*0.18)).toFixed(2)}</td></tr>`).join('')}
+  </tbody></table>
+  <div class="tot"><div><span>Op. gravada</span><span>S/ ${num(c.gravada).toFixed(2)}</span></div><div><span>IGV 18%</span><span>S/ ${num(c.igv).toFixed(2)}</span></div><div class="g"><span>Importe total</span><span>S/ ${num(c.total).toFixed(2)}</span></div></div>
+  <div class="son">${montoLetras(c.total)}</div>
+  <div class="foot">${qrImg?`<img src="${qrImg}" width="110" height="110" alt="Código QR">`:''}<div>Representación impresa de la ${c.tipo==='01'?'Factura':'Boleta de Venta'} Electrónica.<br>Consulte su validez en www.sunat.gob.pe<br>Resumen (hash): ${esc(c.hash||'')}<br>Estado SUNAT: ${esc(c.estado)}${c.sunat_mensaje?' – '+esc(c.sunat_mensaje.split('|')[0]):''}</div></div>
+  </div></body></html>`;
+  const w=window.open('','_blank'); if(!w) return toast('Permite las ventanas emergentes para imprimir','err');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+function vComprobantes(el){
+  const modo=modoSunat(), L0=S.comprobantes.filter(c=>c.modo===modo), m=hoy().slice(0,7);
+  const okMes=L0.filter(c=>['ACEPTADO','OBSERVADO'].includes(c.estado)&&mesDe(c.fecha_emision)===m);
+  const pendientes=S.ventas.filter(v=>v.con_igv!==false && !compDeVenta(v.id) && mesDe(v.fecha)===m);
+  el.innerHTML = `
+    ${pageHead('Comprobantes SUNAT','Ventas / Comprobantes',`<span class="badge ${modo==='beta'?'t-warning':'t-success'}" style="padding:8px 12px">${ic(modo==='beta'?'flask':'shield-check')}${modo==='beta'?'Modo prueba (beta)':'Producción'}</span>`)}
+    ${modo==='beta'?`<div class="alert warning">${ic('flask')}<div>Estás en <b>modo prueba</b>: los comprobantes van al ambiente de pruebas de SUNAT y no tienen validez. Cuando tengas tu certificado y usuario SOL, cámbialo en Configuración.</div><button class="btn sm" data-go-config>Configurar</button></div>`:''}
+    <div class="g g4 mb">${[['Emitidos este mes',int(okMes.length),'file-check','success'],['Facturado este mes',money(okMes.reduce((a,c)=>a+num(c.total),0)),'currency-dollar','primary'],['Ventas sin comprobante',int(pendientes.length),'file-alert','warning'],['Rechazados / no enviados',int(L0.filter(c=>['RECHAZADO','ERROR'].includes(c.estado)).length),'alert-triangle','danger']].map(([l,v,i,t])=>`<div class="card stat"><div class="av t-${t}">${ic(i)}</div><div><div class="v">${v}</div><div class="l">${l}</div></div></div>`).join('')}</div>
+    <div class="card"><div class="card-h"><h5>Comprobantes emitidos<span class="sub">Toca el ícono de impresora para ver o descargar el PDF</span></h5></div>
+      <div class="tbl-wrap"><table class="rt"><thead><tr><th>Comprobante</th><th>Fecha</th><th>Cliente</th><th class="num">Total</th><th>Estado SUNAT</th><th class="act">Acciones</th></tr></thead><tbody>
+      ${L0.length?L0.map(c=>`<tr><td class="first"><div class="who"><div class="av sm t-${c.tipo==='01'?'primary':'info'}">${ic(c.tipo==='01'?'file-invoice':'receipt')}</div><div><b>${c.serie}-${c.correlativo}</b><small>${c.tipo==='01'?'Factura':'Boleta'}</small></div></div></td>
+        <td data-l="Fecha">${fmtF(c.fecha_emision)}</td><td data-l="Cliente">${esc(c.cliente_nombre||'')}<div class="c-muted" style="font-size:13px">${esc(c.cliente_num_doc&&c.cliente_num_doc!=='-'?c.cliente_num_doc:'')}</div></td>
+        <td data-l="Total" class="num"><b class="c-head">${money(c.total)}</b></td><td data-l="Estado SUNAT">${badgeEstadoComp(c)}${['RECHAZADO','ERROR'].includes(c.estado)&&c.sunat_mensaje?`<div class="c-danger" style="font-size:12px;max-width:280px">${esc(c.sunat_mensaje.slice(0,140))}</div>`:''}</td>
+        <td class="act">${['ACEPTADO','OBSERVADO'].includes(c.estado)?`<button class="icon-act" title="Ver / imprimir" data-pc="${c.id}">${ic('printer')}</button>`:''}<button class="icon-act" title="Descargar XML" data-xml="${c.id}">${ic('file-code')}</button>${['RECHAZADO','ERROR'].includes(c.estado)?`<button class="btn sm lbl" data-re="${c.id}">${ic('refresh')}Reenviar</button>`:''}</td></tr>`).join('')
+      : emptyRow(6,'file-invoice','Aún no emites comprobantes. Ve a Ventas y toca "Emitir" en una venta.')}
+      </tbody></table></div></div>
+    ${pendientes.length?`<div class="card"><div class="card-h"><h5>Ventas de este mes sin comprobante</h5></div><div class="tbl-wrap"><table class="rt"><thead><tr><th>Cliente</th><th>Fecha</th><th class="num">Total</th><th class="act">Acción</th></tr></thead><tbody>
+      ${pendientes.slice(0,30).map(v=>{const cl=cliById(v.cliente_id); return `<tr><td class="first"><div class="who">${avatar(cl)}<div><b>${esc(cl?.nombre||'Cliente varios')}</b></div></div></td><td data-l="Fecha">${fmtF(v.fecha)}</td><td data-l="Total" class="num">${money(v.total)}</td><td class="act"><button class="btn sm" data-em="${v.id}">${ic('file-invoice')}Emitir</button></td></tr>`}).join('')}</tbody></table></div></div>`:''}`;
+  $$('[data-pc]',el).forEach(b=>b.onclick=()=>imprimirComprobante(S.comprobantes.find(c=>c.id===+b.dataset.pc)));
+  $$('[data-xml]',el).forEach(b=>b.onclick=()=>descargarXML(S.comprobantes.find(c=>c.id===+b.dataset.xml)));
+  $$('[data-re]',el).forEach(b=>b.onclick=()=>reenviarComp(+b.dataset.re));
+  $$('[data-em]',el).forEach(b=>b.onclick=()=>formEmitir(S.ventas.find(v=>v.id===+b.dataset.em)));
+  const gc=$('[data-go-config]',el); if(gc) gc.onclick=()=>go('config');
+}
 
 /* ================= DASHBOARD ================= */
 function vDashboard(el){
@@ -686,7 +832,7 @@ function vVentas(el){
         ${fg('Estado', `<select class="fc" id="fest">${[['todas','Todas'],['Pagado','Pagadas'],['Pendiente','Pendientes'],['Parcial','Parciales']].map(([v,l])=>`<option value="${v}" ${S.ventaFiltro===v?'selected':''}>${l}</option>`).join('')}</select>`)}
         ${fg('Buscar', `<input class="fc" id="fq" placeholder="Cliente, distrito…">`)}
       </div>
-      <div class="tbl-wrap"><table class="rt"><thead><tr><th>Cliente</th><th>Fecha</th><th class="num">1.5 kg</th><th class="num">3 kg</th><th class="num">Total</th><th>Estado</th><th>Método</th><th class="act">Acciones</th></tr></thead><tbody id="tb"></tbody></table></div>
+      <div class="tbl-wrap"><table class="rt"><thead><tr><th>Cliente</th><th>Fecha</th><th class="num">1.5 kg</th><th class="num">3 kg</th><th class="num">Total</th><th>Estado</th><th>Comprobante</th><th class="act">Acciones</th></tr></thead><tbody id="tb"></tbody></table></div>
     </div>`;
   const draw=()=>{
     const q=$('#fq').value.trim().toLowerCase();
@@ -696,10 +842,12 @@ function vVentas(el){
       <td class="first"><div class="who">${avatar(c)}<div><b>${esc(c?.nombre||'Cliente varios')}</b><small>${esc(v.distrito||c?.distrito||'')}</small></div></div></td>
       <td data-l="Fecha">${fmtF(v.fecha)}</td><td data-l="1.5 kg" class="num">${v.cant_15}</td><td data-l="3 kg" class="num">${v.cant_3}</td>
       <td data-l="Total" class="num"><b class="c-head">${money(v.total)}</b>${deuda(v)>0?`<div class="c-warning" style="font-size:13px">debe ${money(deuda(v))}</div>`:''}</td>
-      <td data-l="Estado">${badgePago(v)}</td><td data-l="Método">${esc(v.metodo_pago||'')}</td>
+      <td data-l="Estado">${badgePago(v)}</td><td data-l="Comprobante">${compDeVenta(v.id)?compBadge(v):v.con_igv===false?'<span class="c-muted" style="font-size:13px">Sin IGV</span>':`<button class="btn sm lbl" data-em="${v.id}">${ic('file-invoice')}Emitir</button>`}</td>
       <td class="act">${deuda(v)>0?`<button class="icon-act ok" title="Cobrar" data-cob="${v.id}">${ic('cash')}</button>`:''}<button class="icon-act" title="Ver" data-ver="${v.id}">${ic('eye')}</button><button class="icon-act" title="Editar" data-ed="${v.id}">${ic('pencil')}</button><button class="icon-act del" title="Borrar" data-del="${v.id}">${ic('trash')}</button></td></tr>`}).join('')
       : emptyRow(8,'shopping-cart','No hay ventas en este mes con ese filtro.',`<button class="btn" data-nv>${ic('plus')}Registrar la primera venta</button>`);
     $$('[data-cob]',el).forEach(b=>b.onclick=()=>cobrarVenta(S.ventas.find(v=>v.id===+b.dataset.cob)));
+    $$('[data-em]',el).forEach(b=>b.onclick=()=>formEmitir(S.ventas.find(v=>v.id===+b.dataset.em)));
+    $$('[data-pc]',el).forEach(b=>b.onclick=()=>imprimirComprobante(S.comprobantes.find(c=>c.id===+b.dataset.pc)));
     $$('[data-ver]',el).forEach(b=>b.onclick=()=>detalleVenta(+b.dataset.ver));
     $$('[data-ed]',el).forEach(b=>b.onclick=()=>formVenta(S.ventas.find(v=>v.id===+b.dataset.ed)));
     $$('[data-del]',el).forEach(b=>b.onclick=()=>borrarVenta(+b.dataset.del));
@@ -725,11 +873,13 @@ function formCliente(c={}, after){
       ${fg('Referencia', inp('referencia', c.referencia||'', 'placeholder="Frente al parque…"'))}
       ${fg('Precio especial 1.5 kg', money_in('precio_15', c.precio_15??'', `placeholder="${E.precio_15}"`), 'Vacío = precio normal')}
       ${fg('Precio especial 3 kg', money_in('precio_3', c.precio_3??'', `placeholder="${E.precio_3}"`), 'Vacío = precio normal')}
+      ${fg('Tipo de documento', sel('tipo_doc', [['NINGUNO','Sin documento'],['DNI','DNI'],['RUC','RUC (para factura)'],['CE','Carné de extranjería']], c.tipo_doc||'NINGUNO'))}
+      ${fg('Número de documento', inp('num_doc', c.num_doc||'', 'inputmode="numeric" placeholder="DNI 8 / RUC 11 dígitos"'))}
       ${fg('Recordarle cada (días)', inp('frecuencia_dias', c.frecuencia_dias||7, 'type="number" min="1"'), 'Para avisarte cuándo escribirle')}
       ${c.id?fg('Estado', `<label class="sw"><input type="checkbox" name="activo" ${c.activo?'checked':''}> Cliente activo</label>`):'<div></div>'}
     </div>${fg('Notas', `<textarea class="fc" name="notas" rows="2" placeholder="Horario, preferencias…">${esc(c.notas||'')}</textarea>`)}`,
     onSubmit: async (fd, close)=>{
-      const row={nombre:fd.get('nombre').trim(), telefono:(fd.get('telefono')||'').trim()||null, distrito:fd.get('distrito')||null, tipo:fd.get('tipo'), direccion:fd.get('direccion')||null, referencia:fd.get('referencia')||null, frecuencia_dias:parseInt(fd.get('frecuencia_dias'))||7, precio_15:fd.get('precio_15')===''?null:num(fd.get('precio_15')), precio_3:fd.get('precio_3')===''?null:num(fd.get('precio_3')), notas:fd.get('notas')||null};
+      const row={nombre:fd.get('nombre').trim(), telefono:(fd.get('telefono')||'').trim()||null, distrito:fd.get('distrito')||null, tipo:fd.get('tipo'), direccion:fd.get('direccion')||null, referencia:fd.get('referencia')||null, frecuencia_dias:parseInt(fd.get('frecuencia_dias'))||7, tipo_doc:fd.get('tipo_doc')||'NINGUNO', num_doc:(fd.get('num_doc')||'').replace(/\s/g,'')||null, precio_15:fd.get('precio_15')===''?null:num(fd.get('precio_15')), precio_3:fd.get('precio_3')===''?null:num(fd.get('precio_3')), notas:fd.get('notas')||null};
       if(!row.nombre){ toast('Escribe el nombre del cliente','err'); return; }
       if(c.id) row.activo = fd.get('activo')==='on';
       if(row.telefono && !c.id){ const dup=S.clientes.find(x=>(x.telefono||'').replace(/\D/g,'')===row.telefono.replace(/\D/g,'')); if(dup && !confirmar(`Ya existe "${dup.nombre}" con ese número. ¿Crear de todas formas?`)) return; }
@@ -1034,14 +1184,31 @@ function vConfig(el){
   el.innerHTML = `
     ${pageHead('Configuración','Sistema / Configuración')}
     <div class="g g-8-4">
-      <div class="card"><div class="card-h"><h5>Empresa y precios<span class="sub">Estos precios se usan por defecto en cada venta</span></h5></div><div class="card-b">
+      <div>
+      <div class="card mb"><div class="card-h"><h5>Empresa, datos fiscales y precios<span class="sub">Los datos fiscales salen impresos en boletas y facturas</span></h5></div><div class="card-b">
         <form id="fe"><div class="frow">
-          ${fg('Razón social', inp('nombre', E.nombre))}${fg('RUC', inp('ruc', E.ruc||''))}
-          ${fg('Teléfono', inp('telefono', E.telefono||''))}${fg('Dirección', inp('direccion', E.direccion||''))}
-          ${fg('Precio bolsa 1.5 kg', money_in('precio_15', E.precio_15))}${fg('Precio bolsa 3 kg', money_in('precio_3', E.precio_3))}
+          ${fg('Nombre del negocio', inp('nombre', E.nombre))}${fg('RUC', inp('ruc', E.ruc||'', 'inputmode="numeric" maxlength="11" placeholder="11 dígitos"'))}
+          ${fg('Razón social (como en SUNAT)', inp('razon_social', E.razon_social||'', 'placeholder="MJ HIELERIA S.A.C."'))}${fg('Nombre comercial', inp('nombre_comercial', E.nombre_comercial||'', 'placeholder="MJ Hielería"'))}
+          ${fg('Dirección fiscal', inp('direccion', E.direccion||'', 'placeholder="Av. / Jr. … (como en tu ficha RUC)"'))}${fg('Ubigeo', inp('ubigeo', E.ubigeo||'150101', 'inputmode="numeric" maxlength="6"'), 'Código de 6 dígitos de tu distrito (ficha RUC)')}
+          ${fg('Departamento', inp('departamento', E.departamento||'LIMA'))}${fg('Provincia', inp('provincia', E.provincia||'LIMA'))}
+          ${fg('Distrito fiscal', inp('distrito_fiscal', E.distrito_fiscal||'LIMA'))}${fg('Teléfono', inp('telefono', E.telefono||''))}
+          ${fg('Precio bolsa 1.5 kg (sin IGV)', money_in('precio_15', E.precio_15))}${fg('Precio bolsa 3 kg (sin IGV)', money_in('precio_3', E.precio_3))}
           ${fg('Stock mínimo 1.5 kg', inp('stock_minimo_15', E.stock_minimo_15, 'type="number"'))}${fg('Stock mínimo 3 kg', inp('stock_minimo_3', E.stock_minimo_3, 'type="number"'))}
         </div>${fg('Mensaje de recordatorio por WhatsApp', `<textarea class="fc" name="mensaje_recordatorio" rows="3">${esc(E.mensaje_recordatorio)}</textarea>`, 'Usa {nombre} y {dias}: se reemplazan solos.')}
         <button class="btn">${ic('device-floppy')}Guardar cambios</button></form></div></div>
+      <div class="card"><div class="card-h"><h5>Facturación electrónica SUNAT<span class="sub">Boletas y facturas con el servicio gratuito de SUNAT</span></h5><span class="badge ${modoSunat()==='beta'?'t-warning':'t-success'}">${modoSunat()==='beta'?'Modo prueba':'Producción'}</span></div><div class="card-b">
+        <form id="fs"><div class="frow3">
+          ${fg('Serie de boletas', inp('serie_boleta', E.serie_boleta||'B001', 'maxlength="4"'))}${fg('Serie de facturas', inp('serie_factura', E.serie_factura||'F001', 'maxlength="4"'))}
+          ${fg('Ambiente', sel('sunat_modo', [['beta','Prueba (beta)'],['produccion','Producción (real)']], modoSunat()))}
+        </div><button class="btn">${ic('device-floppy')}Guardar</button></form>
+        <div class="alert info" style="margin-top:16px;align-items:flex-start">${ic('list-check')}<div><b>Para emitir de verdad (producción)</b>, haz esto una sola vez:<ol style="margin:6px 0 0;padding-left:18px;line-height:1.6">
+          <li>En SUNAT Operaciones en Línea (SOL): afíliate como emisor electrónico con <b>sistema del contribuyente</b> y solicita tu <b>Certificado Digital Tributario</b> (gratuito).</li>
+          <li>En SOL crea un <b>usuario secundario</b> con permiso para enviar comprobantes electrónicos.</li>
+          <li>En tu Supabase → Edge Functions → Secrets, agrega tú mismo: <code>SUNAT_SOL_USUARIO</code>, <code>SUNAT_SOL_CLAVE</code>, <code>SUNAT_CERT_PFX_BASE64</code> (el archivo .pfx en base64) y <code>SUNAT_CERT_CLAVE</code>.</li>
+          <li>Completa aquí tu RUC, razón social, dirección y ubigeo, y cambia el ambiente a <b>Producción</b>.</li></ol>
+          <div style="margin-top:6px">Tu Clave SOL y tu certificado quedan solo en tu Supabase; nunca dentro de esta página.</div></div></div>
+      </div></div>
+      </div>
       <div>
         <div class="card mb"><div class="card-h"><h5>Usuarios con acceso</h5></div><div class="card-b">
           ${S.admins.map(a=>`<div class="list-row"><div class="av sm round t-primary">${esc(iniciales(verUsuario(a.email)))}</div><div class="grow"><b>${esc(verUsuario(a.email))}</b><small>Administrador</small></div>${S.admins.length>1?`<button class="icon-act del" title="Quitar acceso" data-ad="${esc(a.email)}">${ic('trash')}</button>`:''}</div>`).join('')}
@@ -1052,6 +1219,10 @@ function vConfig(el){
       </div>
     </div>`;
   $('#fe').onsubmit=async e=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); ['precio_15','precio_3'].forEach(k=>f[k]=num(f[k])); ['stock_minimo_15','stock_minimo_3'].forEach(k=>f[k]=parseInt(f[k])||0); f.updated_at=new Date().toISOString(); const {error}=await sb.from('hielo_empresa').update(f).eq('id',1); chk(error); toast('Configuración guardada'); await refresh(); };
+  $('#fs').onsubmit=async e=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.serie_boleta=f.serie_boleta.trim().toUpperCase(); f.serie_factura=f.serie_factura.trim().toUpperCase();
+    if(!/^B[A-Z0-9]{3}$/.test(f.serie_boleta)||!/^F[A-Z0-9]{3}$/.test(f.serie_factura)) return toast('Las series deben ser de 4 caracteres: B001 para boletas, F001 para facturas','err');
+    if(f.sunat_modo==='produccion' && modoSunat()!=='produccion'){ if(!/^\d{11}$/.test(S.empresa.ruc||'')||!S.empresa.razon_social||!S.empresa.direccion) return toast('Primero guarda RUC, razón social y dirección fiscal','err'); if(!confirmar('Desde ahora los comprobantes serán REALES ante SUNAT. ¿Ya cargaste tus secretos (usuario SOL y certificado) en Supabase?')) return; }
+    const {error}=await sb.from('hielo_empresa').update(f).eq('id',1); chk(error); toast('Facturación guardada'); await refresh(); };
   $('#fa').onsubmit=async e=>{ e.preventDefault(); const email=toEmail(new FormData(e.target).get('usuario')); const {error}=await sb.from('hielo_admins').insert({email}); chk(error); toast('Acceso añadido'); await refresh(); };
   $$('[data-ad]',el).forEach(b=>b.onclick=async()=>{ if(!confirmar('¿Quitar acceso a '+verUsuario(b.dataset.ad)+'?')) return; const {error}=await sb.from('hielo_admins').delete().eq('email',b.dataset.ad); chk(error); await refresh(); });
   $$('[data-x]',el).forEach(b=>b.onclick=()=>{ const k=b.dataset.x;
@@ -1098,7 +1269,7 @@ async function boot(){
   $('#avatarBtn').textContent=iniciales(S.user);
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
   await loadAll();
-  const h=location.hash.slice(1); S.view=['dashboard','ventas','clientes','stock','gastos','pagar','prestamos','reportes','config'].includes(h)?h:'dashboard';
+  const h=location.hash.slice(1); S.view=['dashboard','ventas','comprobantes','clientes','stock','gastos','pagar','prestamos','reportes','config'].includes(h)?h:'dashboard';
   render();
 }
 bindTop();
